@@ -1,4 +1,2 @@
-misource.txt
-pacman-contest\src/contest.egg-info\
-pacman-contest\src/contest\__pycache__\
-pacman-contest\.eggs\
+pacman-contest
+__pycache__

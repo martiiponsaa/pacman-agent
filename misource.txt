@@ -1,0 +1,2 @@
+python3.8 -m venv --copies ~/pacman-agent-venv
+source ~/pacman-agent-venv/bin/activate

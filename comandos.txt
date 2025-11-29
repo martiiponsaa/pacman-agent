@@ -1,0 +1,6 @@
+python capture.py -r baseline_team -b baseline_team
+python capture.py -r ../../../my_team.py -b baseline_team
+python capture.py -r baseline_team -b ../../../my_team.py
+
+trolo
+python capture.py -r baseline_team -b ../../agents/team_name_2/my_team.py

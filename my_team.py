@@ -181,3 +181,38 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
 
     def get_weights(self, game_state, action):
         return {'num_invaders': -1000, 'on_defense': 100, 'invader_distance': -10, 'stop': -100, 'reverse': -2}
+
+
+
+
+class ReflexMitalAgent(CaptureAgent):
+    """Simple example agent: picks a random legal action (not STOP)"""
+    def __init__(self, index, **kwargs):
+        super().__init__(index, **kwargs)
+
+    def choose_action(self, game_state):
+        #first we should get all the possible information for this state
+        #where is food
+        food = self.get_food(game_state).as_list()
+
+        #where are the opponents
+        opponents = self.get_opponents(game_state)
+
+    
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        legal = game_state.get_legal_actions(self.index)
+        non_stop = [a for a in legal if a != Directions.STOP]
+        return random.choice(non_stop) if non_stop else Directions.STOP
