@@ -1,18 +1,17 @@
 # Team Information
 
-**Course:** _[fill your course code and name]_
+**Course:** Intel·ligència Artificial 2025-24304-T1 - UPF
 
-**Semester:** Semester 2, 2020
+**Semester:** Trim 1, 2025
 
-**Instructor:** _[name of your instructor]_
+**Instructor:** Anders Jonsson (anders.jonsson@upf.edu)
 
-**Team name:** _[replace this with team name in plan text]_
+**Team name:** Mital
 
 **Team members:**
 
-* Student 1's Student number - Full Name - Student email - Student Github id
-* Student 2's Student number - Full Name - Student email - Student Github id
-* Student 3's Student number - Full Name - Student email - Student Github id
+* Student 1's 232138 - Àlex Ruiz López - alex.ruiz05@estudiant.upf.edu - alexruiz0
+* Student 2's 231656 - Martí Ponsa Rámila - marti.ponsa01@estudiant.upf.edu - martiiponsaa
 
 Replace the lines above with the correct details of members. Delete or add lines as needed.
 
