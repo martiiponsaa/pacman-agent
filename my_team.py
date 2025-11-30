@@ -344,148 +344,189 @@ class MitalDefensive(ReflexCaptureAgent):
 class MitalOffensiveRata(MitalDefensive):
 
     """
-    Offensive → Defensive hybrid agent.
-
-    OFFENSE:
-        • Go to enemy side.
-        • Collect exactly enough food to produce a winning score.
-        • Return to the border (camping positions) to deposit food.
-        • Reflex-based navigation: chase food, avoid defenders.
-
-    DEFENSE:
-        • When global score says we are winning:
-              red: score > 0
-              blue: score < 0
-          → behave exactly like MitalDefensive.
+    Mital Offensive agent:
+    
+    This agent has two modes: OFFENSE and DEFENSE. The idea is that at first, as the game is tied, it will go 
+    to the enemy side and collect exactly enough food to produce a winning score. Once it has collected enough 
+    food, it will go back to it's part of the map to deposit the food and it will change to DEFENSE mode, behaving exactly
+    like MitalDefensive. The OFFENSE mode uses a reflex aproach, chasing food and avoiding ghosts.
+    
+    If further in the game it detects that we are no longer winning (maybe because the enemy scored), it will switch back to OFFENSE 
+    mode and so on.
     """
 
     def __init__(self, index):
         super().__init__(index)
-        self.mode = "offense"     # "offense" or "defense"
+        self.mode = "offense" #"offense" or "defense"
 
-    # ------------------------------------------------------------
-    # Helper: compute how many pellets are needed to be winning
-    # ------------------------------------------------------------
+    #we compute how many dots we have to eat to have a winning score
     def food_needed_to_win(self, game_state):
         score = game_state.get_score()
 
         if self.red:
-            # Red must make score > 0
+            #Red must score > 0
             needed = 1 - score
         else:
-            # Blue must make score < 0
+            #Blue must score < 0
             needed = score + 1
 
+        #if needed is negative, we don't need any food to win
         if needed < 0:
             needed = 0
         return needed
 
-    # ------------------------------------------------------------
-    # Helper: simple reflex action for offense
-    # ------------------------------------------------------------
+    #Reflex aproach for the offensive mode of the agent
     def choose_offensive_action(self, game_state):
 
+        #We get the legal actions
         actions = game_state.get_legal_actions(self.index)
 
-        # Avoid STOP
+        #as in the defensive, we avoid stopping
         if Directions.STOP in actions:
             actions.remove(Directions.STOP)
 
-        # Get info
+        #basic info about our agent
         my_state = game_state.get_agent_state(self.index)
-        position = game_state.get_agent_position(self.index)
         carried = my_state.num_carrying
+        position = game_state.get_agent_position(self.index)
 
-        # Food on enemy side
+        #get the food on the enemy side
         enemy_food = self.get_food(game_state).as_list()
 
-        # Enemies (for avoidance)
+        #get visible enemy defenders (ghosts) so that we can avoid them
         opponents = self.get_opponents(game_state)
         visible_ghosts = []
+        
+        #iterate over all oponents to find the visible ghosts
         for opp in opponents:
             enemy = game_state.get_agent_state(opp)
+            #we only care about visible ghosts (not pacman)
             if not enemy.is_pacman and enemy.get_position() is not None:
+                
+                #we add it to the list of visible ghosts
                 visible_ghosts.append(enemy.get_position())
 
-        # Compute how many pellets are needed
+        #compute how much food is needed to win (will check it always)
         needed = self.food_needed_to_win(game_state)
 
-        # If enough food collected → return home (toward camping positions)
+        #if we already have enough food, ew go home
         if carried >= needed and needed > 0:
             return self.go_home(game_state, actions)
 
-        # Reflex evaluation per action
+        #we iterate over all actions to see what is best (this is the reflex part)
         scores = []
         for a in actions:
+            
+            #generate the successor state and get the new position
             successor = game_state.generate_successor(self.index, a)
             new_pos = successor.get_agent_position(self.index)
 
+            #initialize reflex value
             value = 0
 
-            # Closer to nearest food = good
+            food_dist = float("inf")
+                
+            #we want food that is closer to us
             if enemy_food:
-                food_dist = min(self.get_maze_distance(new_pos, f) for f in enemy_food)
+                #so we compute the distance to the closest food
+                for f in enemy_food:
+                    temp_food_dist = self.get_maze_distance(new_pos, f)
+                    
+                    #we compute the minimum distance to food
+                    if temp_food_dist < food_dist:
+                        food_dist = temp_food_dist
+                        
+                #we increase the value the closer the food is
                 value += 10.0 / (1 + food_dist)
 
-            # Avoid visible enemy defenders
+            #we want to avoid ghosts, so we decrease the value if we are close to them
             for g in visible_ghosts:
+                
+                #compute distance to ghost
                 d = self.get_maze_distance(new_pos, g)
+                
+                #if we are too close to a ghost, heavily decrease the value
                 if d < 4:
                     value -= (5.0 / (1 + d))
 
+            #append the value and action to the scores list
             scores.append((value, a))
 
-        # Choose best by reflex value
-        best_value = max(v for v, _ in scores)
-        best_actions = [a for v, a in scores if v == best_value]
+        #compute the best value
+        best_value = -float("inf")
+        
+        #iterate over all scores to find the best value
+        for pair in scores:
+            
+            #get the value from the pair
+            v = pair[0]
+            if v > best_value:
+                best_value = v
 
+        #compute the best actions
+        best_actions = []
+        for v, a in scores:
+            
+            #if the value is the best, we add the action to the list
+            if v == best_value:
+                best_actions.append(a)
+
+        #if there is a tie, we randomly choose one of the best actions
         return random.choice(best_actions)
 
-    # ------------------------------------------------------------
-    # Helper: return home to deposit food (toward camping positions)
-    # ------------------------------------------------------------
+    #this function makes the agent go back to its side of the map
     def go_home(self, game_state, actions):
 
+        #we get the current position
         position = game_state.get_agent_position(self.index)
 
-        # Move toward the nearest camping position
-        best_dist = float("inf")
-        chosen = None
+        #we will choose the action that gets us closer to the camping positions (which are in our side of the map)
+        best_distance = float("inf") #because we want to minimize distance
+        chosen_action = None
 
+        #iterate over all actions
         for a in actions:
+            
+            #generate the successor state and get the new position (same as before)
             successor = game_state.generate_successor(self.index, a)
             new_pos = successor.get_agent_position(self.index)
 
-            # Distance to nearest camping pos
-            d = min(self.get_maze_distance(new_pos, c) for c in self.camping_pos)
-            if d < best_dist:
-                best_dist = d
-                chosen = a
+            #we compute the nearest distance to our camping positions
+            d = float("inf")
+            for c in self.camping_pos:
+                dist = self.get_maze_distance(new_pos, c)
+                if dist < d:
+                    d = dist
+                    
+            #we choose the action that minimizes the distance to our side
+            if d < best_distance:
+                best_distance = d
+                chosen_action = a
 
-        return chosen
+        #finally we return the chosen action
+        return chosen_action
 
-    # ------------------------------------------------------------
-    # FINAL DECISION FUNCTION
-    # ------------------------------------------------------------
+    #this is the "main" function of the offensive agent and is responsible for switching modes
     def choose_action(self, game_state):
 
-        # GLOBAL SCORE determines mode
+        #the global score will decide in which mode we are
         score = game_state.get_score()
 
+        #if we are red, positive score means we are winning, else negative score means we are winning
         if self.red:
             winning = (score > 0)
         else:
             winning = (score < 0)
 
-        # Mode switch
+        #if we are winning, we switch to defense mode, else we stay in offense mode
         if winning:
             self.mode = "defense"
         else:
             self.mode = "offense"
 
-        # DEFENSIVE MODE → behave exactly like MitalDefensive
+        #if we are in defense mode, we use the defensive choose action (called to the suoerclass MitalDefensive)
         if self.mode == "defense":
             return super().choose_action(game_state)
 
-        # OFFENSIVE MODE
+        #If we are in offense mode, we use the offensive choose action
         return self.choose_offensive_action(game_state)
