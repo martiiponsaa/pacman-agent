@@ -19,7 +19,7 @@ from contest.util import nearest_point
 #################
 
 def create_team(first_index, second_index, is_red,
-                first='OffensiveReflexAgent', second='DefensiveReflexAgent', num_training=0):
+                first='MitalDefensive', second='MitalOffensiveRata', num_training=0):
     """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
@@ -185,34 +185,414 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
 
 
 
-class ReflexMitalAgent(CaptureAgent):
+class MitalDefensive(ReflexCaptureAgent):
     """Simple example agent: picks a random legal action (not STOP)"""
-    def __init__(self, index, **kwargs):
-        super().__init__(index, **kwargs)
+    def __init__(self, index):
+        CaptureAgent.__init__(self, index)
+        self.target = None
+        self.prev_food = []
+        self.counter = 0
+
+    def register_initial_state(self, game_state):
+        CaptureAgent.register_initial_state(self, game_state)
+        self.camping(game_state)
+
+    def camping(self, game_state):
+        #goes to the middle of the map and starts camping (jugador tactico) the zone
+        x = (game_state.data.layout.width - 2) // 2
+        if not self.red:
+            x+=1
+        self.camping_pos = []
+
+        #get all the positions in the middle column that are not walls
+        for i in range(1, game_state.data.layout.height - 1):
+            if not game_state.has_wall(x, i):
+                self.camping_pos.append((x, i))
+        
+        #remove the top and bottom positions to avoid camping near the borders (we will use this code to make the attacker go first on top or bottom)
+        for i in range(len(self.camping_pos)):
+            if len(self.camping_pos) > 2:
+                self.camping_pos.remove(self.camping_pos[0])
+                self.camping_pos.remove(self.camping_pos[-1])
+            else:
+                break
+    
+    def next_move(self, game_state):
+
+        agent_moves = []
+        possible_moves = game_state.get_legal_actions(self.index)
+        
+        reverse = Directions.REVERSE[game_state.get_agent_state(self.index).configuration.direction]
+        possible_moves.remove(Directions.STOP)
+
+        #remove the reverse direction to avoid going back
+        for i in range(0, len(possible_moves)-1):
+            if reverse == possible_moves[i]:
+                possible_moves.remove(reverse)
+
+        #only keep moves that keep the agent in defense mode (not pacman)
+        for i in range(len(possible_moves)):
+            j = possible_moves[i]
+            new_state = game_state.generate_successor(self.index, j)
+            if not new_state.get_agent_state(self.index).is_pacman:
+                agent_moves.append(j)
+        
+        #if no moves left, reset counter
+        if len(agent_moves) == 0:
+            self.counter = 0
+        else:
+            self.counter = self.counter + 1
+        if self.counter > 4 or self.counter == 0:
+            agent_moves.append(reverse)
+
+        return agent_moves 
 
     def choose_action(self, game_state):
-        #first we should get all the possible information for this state
-        #where is food
-        food = self.get_food(game_state).as_list()
+        #select next enemy to target
+        position = game_state.get_agent_position(self.index)
+        #if we have reached the target, reset it
+        if position == self.target:
+            self.target = None
+        #set initial conditions
+        min_dist = float("inf")
+        enemies = []
+        nearest_enemy = []
 
-        #where are the opponents
-        opponents = self.get_opponents(game_state)
 
+        #search for enemies at base   
+        enemy_location_array = self.get_opponents(game_state)
+        i = 0
+        while i != len(enemy_location_array):
+            enemy_position = enemy_location_array[i]
+            enemy = game_state.get_agent_state(enemy_position)
+
+            #check if the enemy is attacking and if its position is known
+            if enemy.is_pacman and enemy.get_position() != None:
+                enemy_position = enemy.get_position()
+                enemies.append(enemy_position)
+            i+=1
+
+        #target the closest enemy in case of finding
+        if len(enemies) > 0:
+            for e in enemies:
+                dist = self.get_maze_distance(e, position)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_enemy.append(e)
+            self.target = nearest_enemy[-1]
+
+        #if enemy not found, check if food was eaten
+        else:
+            if len(self.prev_food) > 0:
+                #food was eaten
+                if len(self.get_food_you_are_defending(game_state).as_list()) < len(self.prev_food):
+                    eaten_food = set(self.prev_food) - set(self.get_food_you_are_defending(game_state).as_list())
+                    self.target = eaten_food.pop()
+        #update previous food list
+        self.prev_food = self.get_food_you_are_defending(game_state).as_list()
+        
+        #if no target, start camping or defending food
+        if self.target == None:
+            if len(self.get_food_you_are_defending(game_state).as_list()) <= 4:
+                vip_food = self.get_food_you_are_defending(game_state).as_list() + self.get_capsules_you_are_defending(game_state)
+                self.target = random.choice(vip_food)
+            else:
+                self.target = random.choice(self.camping_pos)
+        possible_move = self.next_move(game_state)
+        best_move = []
+        dist = []
+
+        i=0
+        
+        #choose the best move according to the maze distance to the target      
+        while i < len(possible_move):
+            a = possible_move[i]
+            next_state = game_state.generate_successor(self.index, a)
+            new_pos = next_state.get_agent_position(self.index)
+            best_move.append(a)
+            dist.append(self.get_maze_distance(new_pos, self.target))
+            i+=1
+
+        best = min(dist)
+        best_moves = [a for a, v in zip(best_move, dist) if v == best]
+        the_chosen_one = random.choice(best_moves)
+        return the_chosen_one  
+
+
+class MitalOffensiveRata(ReflexCaptureAgent):
+    """
+    Offensive agent that only grabs the minimum food needed to win,
+    then switches to defensive behavior.
+    """
+    def __init__(self, index):
+        CaptureAgent.__init__(self, index)
+        self.target = None
+        self.mode = 'offense'  # 'offense' or 'defense'
+        self.prev_food = []
+        self.counter = 0
+        self.camping_pos = []
+        
+    def register_initial_state(self, game_state):
+        CaptureAgent.register_initial_state(self, game_state)
+        self.start_pos = game_state.get_agent_position(self.index)
+        self.setup_camping_positions(game_state)
+        
+    def setup_camping_positions(self, game_state):
+        """Set up defensive camping positions on our side"""
+        x = (game_state.data.layout.width - 2) // 2
+        if not self.red:
+            x += 1
+        self.camping_pos = []
+        
+        for i in range(1, game_state.data.layout.height - 1):
+            if not game_state.has_wall(x, i):
+                self.camping_pos.append((x, i))
+        
+        # Remove top and bottom positions
+        for i in range(len(self.camping_pos)):
+            if len(self.camping_pos) > 2:
+                self.camping_pos.remove(self.camping_pos[0])
+                self.camping_pos.remove(self.camping_pos[-1])
+            else:
+                break
     
+    def should_switch_to_offense(self, game_state):
+        """Check if we should switch to offense mode"""
+        score = self.get_score(game_state)
+        my_state = game_state.get_agent_state(self.index)
         
+        # Switch to offense if we're losing or tied AND we're not carrying food
+        return score <= 0 and my_state.num_carrying == 0
+    
+    def should_switch_to_defense(self, game_state):
+        """Check if we should switch to defense mode"""
+        score = self.get_score(game_state)
+        my_state = game_state.get_agent_state(self.index)
         
+        # Switch to defense if we're winning AND we've deposited food OR we're safely home
+        return score > 0 and (my_state.num_carrying == 0 or not my_state.is_pacman)
+    
+    def get_food_needed(self, game_state):
+        """Calculate how many food pellets we need to win"""
+        score = self.get_score(game_state)
+        my_state = game_state.get_agent_state(self.index)
         
+        # We need enough to make score > 0
+        if score <= 0:
+            return abs(score) + 1 - my_state.num_carrying
+        return 0
+    
+    def choose_action(self, game_state):
+        my_state = game_state.get_agent_state(self.index)
+        my_pos = game_state.get_agent_position(self.index)
         
+        # Decide mode based on game state
+        if self.should_switch_to_offense(game_state):
+            self.mode = 'offense'
+        elif self.should_switch_to_defense(game_state):
+            self.mode = 'defense'
         
+        # OFFENSE MODE: Get minimum food needed to win
+        if self.mode == 'offense':
+            food_needed = self.get_food_needed(game_state)
+            
+            # If we have enough food, return home
+            if my_state.num_carrying >= food_needed and my_state.num_carrying > 0:
+                return self.return_home(game_state)
+            
+            # Otherwise, go get food
+            return self.get_food_action(game_state)
         
+        # DEFENSE MODE: Use defensive strategy from MitalDefensive
+        else:
+            return self.defend(game_state)
+    
+    def return_home(self, game_state):
+        """Navigate back to our side to deposit food"""
+        my_pos = game_state.get_agent_position(self.index)
         
+        # Find closest border position
+        border_x = game_state.data.layout.width // 2
+        if not self.red:
+            border_x -= 1
         
+        border_positions = []
+        for y in range(game_state.data.layout.height):
+            if not game_state.has_wall(border_x, y):
+                border_positions.append((border_x, y))
         
+        if not border_positions:
+            return random.choice(game_state.get_legal_actions(self.index))
         
+        # Find closest border position
+        min_dist = float('inf')
+        best_border = None
+        for border_pos in border_positions:
+            dist = self.get_maze_distance(my_pos, border_pos)
+            if dist < min_dist:
+                min_dist = dist
+                best_border = border_pos
         
+        # Move towards closest border
+        actions = game_state.get_legal_actions(self.index)
+        actions.remove(Directions.STOP)
         
+        best_action = None
+        best_dist = float('inf')
         
+        for action in actions:
+            successor = game_state.generate_successor(self.index, action)
+            new_pos = successor.get_agent_position(self.index)
+            dist = self.get_maze_distance(new_pos, best_border)
+            
+            if dist < best_dist:
+                best_dist = dist
+                best_action = action
         
-        legal = game_state.get_legal_actions(self.index)
-        non_stop = [a for a in legal if a != Directions.STOP]
-        return random.choice(non_stop) if non_stop else Directions.STOP
+        return best_action if best_action else random.choice(actions)
+    
+    def get_food_action(self, game_state):
+        """Get action to collect food"""
+        my_pos = game_state.get_agent_position(self.index)
+        food_list = self.get_food(game_state).as_list()
+        
+        if not food_list:
+            return self.return_home(game_state)
+        
+        # Find closest food, avoiding ghosts
+        enemies = [game_state.get_agent_state(i) for i in self.get_opponents(game_state)]
+        ghosts = [a for a in enemies if not a.is_pacman and a.get_position() is not None]
+        
+        # Filter out dangerous food near ghosts
+        safe_food = []
+        for food in food_list:
+            is_safe = True
+            for ghost in ghosts:
+                if ghost.scared_timer == 0:
+                    ghost_dist = self.get_maze_distance(food, ghost.get_position())
+                    if ghost_dist < 3:
+                        is_safe = False
+                        break
+            if is_safe:
+                safe_food.append(food)
+        
+        # If no safe food, use all food
+        target_food = safe_food if safe_food else food_list
+        
+        # Find closest food
+        min_dist = float('inf')
+        closest_food = None
+        for food in target_food:
+            dist = self.get_maze_distance(my_pos, food)
+            if dist < min_dist:
+                min_dist = dist
+                closest_food = food
+        
+        # Move towards closest food
+        actions = game_state.get_legal_actions(self.index)
+        actions.remove(Directions.STOP)
+        
+        best_action = None
+        best_dist = float('inf')
+        
+        for action in actions:
+            successor = game_state.generate_successor(self.index, action)
+            new_pos = successor.get_agent_position(self.index)
+            dist = self.get_maze_distance(new_pos, closest_food)
+            
+            # Avoid ghosts
+            too_close_to_ghost = False
+            for ghost in ghosts:
+                if ghost.scared_timer == 0:
+                    ghost_dist = self.get_maze_distance(new_pos, ghost.get_position())
+                    if ghost_dist <= 1:
+                        too_close_to_ghost = True
+                        break
+            
+            if not too_close_to_ghost and dist < best_dist:
+                best_dist = dist
+                best_action = action
+        
+        return best_action if best_action else random.choice(actions)
+    
+    def defend(self, game_state):
+        """Defensive behavior - same as MitalDefensive"""
+        position = game_state.get_agent_position(self.index)
+        
+        if position == self.target:
+            self.target = None
+        
+        invaders = []
+        nearest_invader = []
+        min_distance = float("inf")
+        
+        opponents_positions = self.get_opponents(game_state)
+        for opponent_pos in opponents_positions:
+            opponent = game_state.get_agent_state(opponent_pos)
+            if opponent.is_pacman and opponent.get_position() is not None:
+                opponent_position = opponent.get_position()
+                invaders.append(opponent_position)
+        
+        if len(invaders) > 0:
+            for opp_position in invaders:
+                dist = self.get_maze_distance(opp_position, position)
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_invader.append(opp_position)
+            self.target = nearest_invader[-1]
+        else:
+            if len(self.prev_food) > 0:
+                if len(self.get_food_you_are_defending(game_state).as_list()) < len(self.prev_food):
+                    eaten_food = set(self.prev_food) - set(self.get_food_you_are_defending(game_state).as_list())
+                    self.target = eaten_food.pop()
+        
+        self.prev_food = self.get_food_you_are_defending(game_state).as_list()
+        
+        if self.target is None:
+            if len(self.get_food_you_are_defending(game_state).as_list()) <= 4:
+                vip_food = self.get_food_you_are_defending(game_state).as_list() + \
+                          self.get_capsules_you_are_defending(game_state)
+                self.target = random.choice(vip_food)
+            else:
+                self.target = random.choice(self.camping_pos)
+        
+        possible_moves = self.get_defensive_moves(game_state)
+        best_moves = []
+        distances = []
+        
+        for action in possible_moves:
+            next_state = game_state.generate_successor(self.index, action)
+            new_pos = next_state.get_agent_position(self.index)
+            best_moves.append(action)
+            distances.append(self.get_maze_distance(new_pos, self.target))
+        
+        best = min(distances)
+        best_actions = [a for a, v in zip(best_moves, distances) if v == best]
+        return random.choice(best_actions)
+    
+    def get_defensive_moves(self, game_state):
+        """Get legal defensive moves"""
+        agent_moves = []
+        possible_moves = game_state.get_legal_actions(self.index)
+        
+        reverse = Directions.REVERSE[game_state.get_agent_state(self.index).configuration.direction]
+        possible_moves.remove(Directions.STOP)
+        
+        for i in range(0, len(possible_moves) - 1):
+            if reverse == possible_moves[i]:
+                possible_moves.remove(reverse)
+        
+        for move in possible_moves:
+            new_state = game_state.generate_successor(self.index, move)
+            if not new_state.get_agent_state(self.index).is_pacman:
+                agent_moves.append(move)
+        
+        if len(agent_moves) == 0:
+            self.counter = 0
+        else:
+            self.counter = self.counter + 1
+            
+        if self.counter > 4 or self.counter == 0:
+            agent_moves.append(reverse)
+        
+        return agent_moves
