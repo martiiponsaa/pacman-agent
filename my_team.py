@@ -282,7 +282,7 @@ class MitalDefensive(ReflexCaptureAgent):
                     self.target = eaten_food.pop()
                     
         #update previous food list
-        self.prev_food = current_food
+        self.prev_food = self.get_food_you_are_defending(game_state).as_list()
         
         #if no target, start camping or defending food. We don't need to check for enemies or eaten food
         if self.target is None:
