@@ -358,6 +358,23 @@ class MitalOffensiveRata(MitalDefensive):
     def __init__(self, index):
         super().__init__(index)
         self.mode = "offense" #"offense" or "defense"
+        
+        #preposition
+        self.first_time_positioning = True
+        self.positioning_counter = 0
+        self.POSITIONING_DURATION = 45
+        
+        #tactilcal dots for both teams (it is a dot of food that may catch our agent if not careful)
+        #thats why we will go there at the beguining just in case someone wants to rush that place
+        
+        # self.red_position = (10, 3)
+        self.red_position = (16, 2)
+
+        # self.blue_position = (20, 12)
+        self.blue_position = (15, 13)
+
+        self.tactical_target = None
+
 
     #we compute how many dots we have to eat to have a winning score
     def food_needed_to_win(self, game_state):
@@ -380,6 +397,47 @@ class MitalOffensiveRata(MitalDefensive):
 
     #Reflex aproach for the offensive mode of the agent
     def choose_offensive_action(self, game_state):
+
+        #prepositioning just the first time:
+        if self.first_time_positioning:
+            # we go to the tactical food dot depending on the team
+            if self.tactical_target is None:
+                #red
+                if self.red:
+                    self.tactical_target = self.red_position
+                #blue
+                else:
+                    self.tactical_target = self.blue_position
+
+            #get legal actions
+            actions = game_state.get_legal_actions(self.index)
+            if Directions.STOP in actions:
+                actions.remove(Directions.STOP)
+
+            #go to the tactical target
+            position = game_state.get_agent_position(self.index)
+            best_action = None
+            min_distance = float("inf")
+
+            for a in actions:
+                successor = game_state.generate_successor(self.index, a)
+                new_pos = successor.get_agent_position(self.index)
+                dist = self.get_maze_distance(new_pos, self.tactical_target)
+                if dist < min_distance:
+                    min_distance = dist
+                    best_action = a
+
+            #increment positioning counter 
+            self.positioning_counter += 1
+            
+            #after some time, we stop pre-positioning
+            if self.positioning_counter >= self.POSITIONING_DURATION:
+                self.first_time_positioning = False  # Done pre-positioning
+            
+            #return the best action to go to the tactical dot
+            return best_action
+
+        #continue as normal
 
         #We get the legal actions
         actions = game_state.get_legal_actions(self.index)
