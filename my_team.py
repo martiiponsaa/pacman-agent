@@ -363,12 +363,15 @@ class MitalOffensiveRata(MitalDefensive):
     def food_needed_to_win(self, game_state):
         score = game_state.get_score()
 
+        #this buffer allows us to choose the advantage we want to have when winning
+        buffer = 2
+        
         if self.red:
             #Red must score > 0
-            needed = 1 - score
+            needed = buffer - score
         else:
             #Blue must score < 0
-            needed = score + 1
+            needed = score + buffer
 
         #if needed is negative, we don't need any food to win
         if needed < 0:
@@ -412,6 +415,92 @@ class MitalOffensiveRata(MitalDefensive):
         #if we already have enough food, ew go home
         if carried >= needed and needed > 0:
             return self.go_home(game_state, actions)
+
+        #The code below is an attempt to avoid getting stuck going for the same food
+        #for too long when blocked by ghosts. It doesn't really quite work but we will leave it here
+
+        #we initialize the target if it doesn't exist
+        try:
+            self.current_target
+        except AttributeError:
+            self.current_target = None
+            self.target_counter = 0
+            self.blocked_target = {}
+
+        #increment counter for blocked targets
+        for target in list(self.blocked_target.keys()):
+            self.blocked_target[target] -= 1
+            if self.blocked_target[target] <= 0:
+                del self.blocked_target[target]
+
+        #if we have a target, we check if we have been going for it for too long
+        if enemy_food:
+            
+            #compute available food (not blocked)
+            available_food = []
+            for f in enemy_food:
+                if f not in self.blocked_target:
+                    available_food.append(f)
+
+            if not available_food:  
+                available_food = enemy_food #if all are blocked
+
+            #we compute an array of distances to all food
+            distances = []
+            for f in enemy_food:
+                dist = self.get_maze_distance(position, f)
+                distances.append((dist, f))
+            
+            #we sort the distances to get the closest food
+            distances.sort()
+            
+            #we choose the closest food as target
+            chosen_target = distances[0][1]
+
+            #if the agent is stuck, increment a counter
+            if self.current_target == chosen_target:
+                self.target_counter += 1
+            
+            #if we have been going for the same target for too long, we change target
+            else:
+                self.current_target = chosen_target
+                self.target_counter = 0
+                
+            #The maximum counter value before changing target
+            MAX_COUNTER = 5
+            BLOCK_DURATION = 20
+            
+            #if we exceed the maximum counter, we change target
+            if self.target_counter > MAX_COUNTER:
+                self.blocked_target[self.current_target] = BLOCK_DURATION
+                other_food = []
+                #we create a list of other food (not the current target)
+                for f in enemy_food:
+                    if f != self.current_target:
+                        other_food.append(f)
+                
+                #if there is another food, we change target to it
+                if other_food:
+                    
+                    #same as before, we compute distances to other food
+                    distances2 = []
+                    for f in other_food:
+                        dist = self.get_maze_distance(position, f)
+                        distances2.append((dist, f))
+
+                    #sort it 
+                    distances2.sort()
+                    
+                    #set the new target
+                    chosen_target = distances2[0][1]
+                
+                #finally we update the current target and reset the counter
+                self.current_target = chosen_target
+                self.target_counter = 0
+        
+        #in case there is no food, we set the target to None
+        else:
+            chosen_target = None
 
         #we iterate over all actions to see what is best (this is the reflex part)
         scores = []
