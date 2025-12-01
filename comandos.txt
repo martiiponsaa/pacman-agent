@@ -5,4 +5,8 @@ python capture.py -r baseline_team -b ../../../my_team.py
 trolo
 python capture.py -r baseline_team -b ../../agents/team_name_2/my_team.py
 
-python capture.py -r ../../../my_team.py -b ../../agents/team_name_2/my_team.py
+Contra pache siendo azul:
+python capture.py -b ../../../my_team.py -r ../../agents/team_name_1/my_team.py
+
+Contra pache siendo rojo
+python capture.py -r ../../../my_team.py -b ../../agents/team_name_1/my_team.py

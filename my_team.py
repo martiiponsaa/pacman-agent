@@ -359,20 +359,26 @@ class MitalOffensiveRata(MitalDefensive):
         super().__init__(index)
         self.mode = "offense" #"offense" or "defense"
         
+        #first action for red:
+        self.first_red_stop = True
+        self.first_blue_stop = True
+        self.aaa = 0
+        
         #preposition
         self.first_time_positioning = True
         self.positioning_counter = 0
-        self.POSITIONING_DURATION = 45
+
+        self.POSITIONING_DURATION_BLUE = 42
+        # self.blue_position = (20, 12)
+        self.blue_position = (15, 13)        
         
-        #tactilcal dots for both teams (it is a dot of food that may catch our agent if not careful)
-        #thats why we will go there at the beguining just in case someone wants to rush that place
-        
+        self.POSITIONING_DURATION_RED = 43
         # self.red_position = (10, 3)
         self.red_position = (16, 2)
 
-        # self.blue_position = (20, 12)
-        self.blue_position = (15, 13)
-
+        #tactilcal dots for both teams (it is a dot of food that may catch our agent if not careful)
+        #thats why we will go there at the beguining just in case someone wants to rush that place
+        
         self.tactical_target = None
 
 
@@ -431,9 +437,16 @@ class MitalOffensiveRata(MitalDefensive):
             self.positioning_counter += 1
             
             #after some time, we stop pre-positioning
-            if self.positioning_counter >= self.POSITIONING_DURATION:
-                self.first_time_positioning = False  # Done pre-positioning
+            if self.red:              
+                if self.positioning_counter >= self.POSITIONING_DURATION_RED:
+                    self.first_time_positioning = False  # Done pre-positioning
+                    return Directions.SOUTH
             
+            else:
+                if self.positioning_counter >= self.POSITIONING_DURATION_BLUE:
+                    self.first_time_positioning = False  # Done pre-positioning
+                    return Directions.NORTH
+
             #return the best action to go to the tactical dot
             return best_action
 
@@ -656,6 +669,16 @@ class MitalOffensiveRata(MitalDefensive):
     #this is the "main" function of the offensive agent and is responsible for switching modes
     def choose_action(self, game_state):
 
+        #first action just for when playing red (because the blue teams has 1 block of difference between agents)
+        if self.red and self.first_red_stop and self.aaa < 3:
+            self.aaa += 1
+            self.first_red_stop = False
+            return Directions.STOP
+        
+        if not self.red and self.first_blue_stop:
+            self.first_blue_stop = False
+            return Directions.STOP
+        
         #the global score will decide in which mode we are
         score = game_state.get_score()
 
